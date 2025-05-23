@@ -1,0 +1,36 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id         Int      @id @default(autoincrement())
+  user       User     @relation(fields: [userId], references: [id])
+  userId     Int
+  loginAt    DateTime @default(now())
+  logoutAt   DateTime?
+  token      String? 
+  amountDue  Float    @default(0) 
+  paid       Boolean  @default(false) 
+  ip         String? 
+  deviceName String? 
+  macAddress String? 
+}
+
+model User {
+  id            Int      @id @default(autoincrement())
+  name          String
+  email         String   @unique
+  password      String
+  isAdmin       Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  lastLogin     DateTime? @default(now())
+  canLogin      Boolean  @default(true)
+  jwtExpiration Int      @default(3600)
+  updatedAt     DateTime @updatedAt
+  sessions      Session[]
+}
