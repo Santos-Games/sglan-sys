@@ -1,5 +1,4 @@
 import express from 'express';
-import { PrismaClient } from '@prisma/client';
 import { authenticate, authorizeAdmin } from '../middlewares/authMiddleware';
 import {
   registerUser,
@@ -8,10 +7,8 @@ import {
   getPendingSessions,
   paySession,
   logoutAllSessions,
-  authorizeUser // adicione este import
+  authorizeUser 
 } from '../controllers/userController';
-
-const prisma = new PrismaClient();
 
 const router = express.Router();
 
