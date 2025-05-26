@@ -91,10 +91,8 @@ router.post('/logout', authenticate, async (req: Request, res: Response) => {
       return;
     }
 
-    // Use timezone de São Paulo
     const logoutAt = DateTime.now().setZone('America/Sao_Paulo').toJSDate();
 
-    // Calcule o tempo em horas (arredondando para cima)
     const loginAt = DateTime.fromJSDate(session.loginAt).setZone('America/Sao_Paulo');
     const diffMs = DateTime.fromJSDate(logoutAt).diff(loginAt, 'hours').hours;
     const hours = Math.ceil(diffMs > 0 ? diffMs : 1); // mínimo 1 hora
@@ -111,7 +109,6 @@ router.post('/logout', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-// Rota para consultar todas as sessões de um usuário (admin pode ver todas)
 router.get('/sessions', authenticate, async (req: Request, res: Response) => {
   if (!req.user) {
     res.status(401).json({ error: 'Unauthorized: user not found in request' });
@@ -144,6 +141,29 @@ router.post('/sessions/:id/pay', authenticate, authorizeAdmin, async (req: Reque
     res.json({ message: 'Session marked as paid', session });
   } catch (error) {
     res.status(500).json({ error: 'Failed to mark session as paid' });
+  }
+});
+
+// Rota para logout em todos os devices - apenas para administradores
+router.post('/logout-all', authenticate, authorizeAdmin, async (req: Request, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ error: 'Unauthorized: user not found in request' });
+    return;
+  }
+  try {
+    const now = DateTime.now().setZone('America/Sao_Paulo').toJSDate();
+    const { count } = await prisma.session.updateMany({
+      where: {
+        logoutAt: null,
+      },
+      data: {
+        logoutAt: now,
+      },
+    });
+
+    res.json({ message: `Logout realizado em ${count} sessões.` });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to logout all sessions' });
   }
 });
 

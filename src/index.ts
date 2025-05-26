@@ -10,9 +10,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Registra as rotas
+
 app.use('/', userRoutes);
-app.use('/admin', adminRoutes); // agora as rotas de admin ficam com prefixo /admin
+app.use('/admin', adminRoutes); 
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
