@@ -7,7 +7,8 @@ import {
   getPendingSessions,
   paySession,
   logoutAllSessions,
-  authorizeUser 
+  authorizeUser,
+  setNegativeHoursLimit
 } from '../controllers/userController';
 
 const router = express.Router();
@@ -19,5 +20,6 @@ router.get('/report/usage', authenticate, authorizeAdmin, (req, res) => { getUsa
 router.get('/report/pending', authenticate, authorizeAdmin, (req, res) => { getPendingSessions(req, res); });
 router.post('/sessions/:id/pay', authenticate, authorizeAdmin, (req, res) => { paySession(req, res); });
 router.post('/logout-all', authenticate, authorizeAdmin, logoutAllSessions);
+router.put('/user/:id/negative-hours-limit', authenticate, authorizeAdmin, setNegativeHoursLimit);
 
 export default router;

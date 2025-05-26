@@ -15,6 +15,7 @@ model Session {
   logoutAt      DateTime?
   token         String? 
   amountDue     Float    @default(0) 
+  minutesUsed   Int      @default(0) // minutos usados nesta sessão
   ip            String? 
   deviceName    String? 
   macAddress    String? 
@@ -38,6 +39,8 @@ model User {
   auditLogs     AuditLog[]
   hoursBalance  Float    @default(0)
   moneyBalance  Float    @default(0)
+  negativeHoursLimit Float @default(0) // Limite de crédito negativo em horas
+  minutesBalance Int     @default(0) // minutos acumulados não cobrados
 }
 
 model AuditLog {

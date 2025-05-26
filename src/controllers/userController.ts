@@ -18,6 +18,7 @@ export async function loginUser(req: Request, res: Response) {
         action: 'login_attempt',
         details: `Tentativa de login para ${email}`,
         ip: ip || req.ip,
+        createdAt: DateTime.now().setZone('America/Sao_Paulo').toJSDate()
       },
     });
 
@@ -28,6 +29,7 @@ export async function loginUser(req: Request, res: Response) {
           action: 'login_failed',
           details: `Falha de login para ${email}`,
           ip: ip || req.ip,
+          createdAt: DateTime.now().setZone('America/Sao_Paulo').toJSDate()
         },
       });
       res.status(401).json({ error: 'Invalid credentials' });
@@ -41,20 +43,25 @@ export async function loginUser(req: Request, res: Response) {
           action: 'login_blocked',
           details: 'Usuário não autorizado a logar',
           ip: ip || req.ip,
+          createdAt: DateTime.now().setZone('America/Sao_Paulo').toJSDate()
         },
       });
       res.status(403).json({ error: 'User is not authorized to log in' });
       return;
     }
 
-    // Impedir login se não houver saldo de horas ou dinheiro
-    if (user.hoursBalance <= 0 && user.moneyBalance < 15) {
+    // Impedir login se não houver saldo de horas ou dinheiro, considerando o limite negativo
+    if (
+      (user.hoursBalance <= (user.negativeHoursLimit ?? 0)) &&
+      user.moneyBalance < 15
+    ) {
       await prisma.auditLog.create({
         data: {
           userId: user.id,
           action: 'login_denied_no_balance',
-          details: 'Usuário sem saldo de horas ou dinheiro',
+          details: `Usuário sem saldo de horas ou atingiu limite negativo (${user.hoursBalance}h/${user.negativeHoursLimit ?? 0}h)`,
           ip: ip || req.ip,
+          createdAt: DateTime.now().setZone('America/Sao_Paulo').toJSDate()
         },
       });
       res.status(403).json({ error: 'Insufficient balance or hours to login' });
@@ -72,6 +79,7 @@ export async function loginUser(req: Request, res: Response) {
           action: 'login_denied_active_session',
           details: 'Sessão já ativa',
           ip: ip || req.ip,
+          createdAt: DateTime.now().setZone('America/Sao_Paulo').toJSDate()
         },
       });
       res.status(403).json({ error: 'User already has an active session' });
@@ -80,7 +88,7 @@ export async function loginUser(req: Request, res: Response) {
 
     await prisma.user.update({
       where: { id: user.id },
-      data: { lastLogin: new Date() },
+      data: { lastLogin: DateTime.now().setZone('America/Sao_Paulo').toJSDate() },
     });
 
     const token = jwt.sign(
@@ -110,6 +118,7 @@ export async function loginUser(req: Request, res: Response) {
         action: 'login_success',
         details: `Login bem-sucedido para ${email}`,
         ip: ip || req.ip,
+        createdAt: DateTime.now().setZone('America/Sao_Paulo').toJSDate()
       },
     });
 
@@ -120,6 +129,7 @@ export async function loginUser(req: Request, res: Response) {
         action: 'login_error',
         details: `Erro no login: ${error}`,
         ip: req.body.ip || req.ip,
+        createdAt: DateTime.now().setZone('America/Sao_Paulo').toJSDate()
       },
     });
     res.status(500).json({ error: 'Failed to log in' });
@@ -231,8 +241,7 @@ export async function paySession(req: Request, res: Response) {
   try {
     const sessionId = Number(req.params.id);
     const { amount, paymentMethod } = req.body;
-    // Remova o update do campo paid
-    // await prisma.session.update({ where: { id: sessionId }, data: { paid: true } });
+
     const session = await prisma.session.findUnique({ where: { id: sessionId } });
     if (!session) {
       res.status(404).json({ error: 'Session not found' });
@@ -243,7 +252,8 @@ export async function paySession(req: Request, res: Response) {
         userId: session.userId,
         amount,
         paymentMethod,
-        sessionId: session.id
+        sessionId: session.id,
+        paidAt: DateTime.now().setZone('America/Sao_Paulo').toJSDate()
       }
     });
     res.json({ message: 'Session marked as paid', session });
@@ -276,15 +286,78 @@ export async function logoutUser(req: Request, res: Response): Promise<void> {
       return;
     }
     const logoutAt = DateTime.now().setZone('America/Sao_Paulo').toJSDate();
-    const loginAt = DateTime.fromJSDate(session.loginAt).setZone('America/Sao_Paulo');
-    const diffMs = DateTime.fromJSDate(logoutAt).diff(loginAt, 'hours').hours;
-    const hours = Math.ceil(diffMs > 0 ? diffMs : 1);
-    const amountDue = hours * 15;
+    const loginAt = DateTime.fromJSDate(session.loginAt, { zone: 'utc' }).setZone('America/Sao_Paulo');
+    const diffMinutes = Math.ceil(DateTime.fromJSDate(logoutAt, { zone: 'utc' }).setZone('America/Sao_Paulo').diff(loginAt, 'minutes').minutes);
+
+    // Atualize a sessão com minutos usados
     await prisma.session.update({
       where: { id: sessionId },
-      data: { logoutAt: logoutAt, amountDue: amountDue },
+      data: { logoutAt: logoutAt, minutesUsed: diffMinutes }
     });
-    res.json({ message: 'Logout successful', hours, amountDue });
+
+    // Acumule minutos no usuário
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+    let totalMinutes = (user.minutesBalance || 0) + diffMinutes;
+    let moneyBalance = user.moneyBalance;
+    let negativeLimit = user.negativeHoursLimit ?? 0;
+    let moneyDiscounted = 0;
+    let negativeUsed = 0;
+
+    // Cada 4 minutos = R$1, 60 minutos = R$15
+    const reaisToCharge = Math.floor(totalMinutes / 4);
+    if (reaisToCharge > 0) {
+      let toDiscount = reaisToCharge;
+      // Desconta do saldo
+      if (moneyBalance > 0) {
+        const fromBalance = Math.min(moneyBalance, toDiscount);
+        moneyDiscounted = fromBalance;
+        moneyBalance -= fromBalance;
+        toDiscount -= fromBalance;
+      }
+      // Se não tem saldo suficiente, desconta do limite negativo (em horas)
+      if (toDiscount > 0 && negativeLimit < 0) {
+        // negativeLimit é negativo, então pode ir até esse valor
+        // Exemplo: negativeLimit = -2 (até -2 horas = -120 minutos = -30 reais)
+        // Cada real = 4 minutos negativos
+        const maxNegativeReais = Math.abs(negativeLimit * 15); // 1 hora = 15 reais
+        const currentNegativeReais = Math.floor(Math.abs(totalMinutes - (user.minutesBalance || 0)) / 4);
+        if (currentNegativeReais + toDiscount <= maxNegativeReais) {
+          negativeUsed = toDiscount;
+          toDiscount = 0;
+        } else {
+          negativeUsed = maxNegativeReais - currentNegativeReais;
+          toDiscount -= negativeUsed;
+        }
+      }
+      // Atualize o saldo e minutos do usuário
+      totalMinutes -= reaisToCharge * 4;
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          moneyBalance: moneyBalance,
+          minutesBalance: totalMinutes
+        }
+      });
+    } else {
+      // Só atualize os minutos acumulados
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          minutesBalance: totalMinutes
+        }
+      });
+    }
+
+    res.json({
+      message: 'Logout successful',
+      minutesUsed: diffMinutes,
+      moneyDiscounted,
+      minutesBalance: totalMinutes
+    });
   } catch (error) {
     res.status(500).json({ error: 'Failed to logout' });
   }
@@ -327,5 +400,25 @@ export async function authorizeUser(req: Request, res: Response): Promise<void> 
     res.json({ message: 'User authorization updated successfully', user });
   } catch (error) {
     res.status(500).json({ error: 'Failed to update user authorization', details: error });
+  }
+}
+
+export async function setNegativeHoursLimit(req: Request, res: Response): Promise<void> {
+  const { id } = req.params;
+  const { negativeHoursLimit } = req.body;
+
+  if (isNaN(Number(id)) || typeof negativeHoursLimit !== 'number') {
+    res.status(400).json({ error: 'Invalid user id or negativeHoursLimit' });
+    return;
+  }
+
+  try {
+    const user = await prisma.user.update({
+      where: { id: Number(id) },
+      data: { negativeHoursLimit },
+    });
+    res.json({ message: 'Negative hours limit updated successfully', user });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update negative hours limit', details: error });
   }
 }
