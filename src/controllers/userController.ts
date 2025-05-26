@@ -192,8 +192,10 @@ export async function getUserPayments(req: Request, res: Response) {
 
 export async function getPendingSessions(req: Request, res: Response) {
   try {
+    // Remova o filtro 'paid: false' e use lógica baseada em pagamentos se necessário
     const sessions = await prisma.session.findMany({
-      where: { paid: false },
+      // Exemplo: sessões que não possuem pagamentos suficientes
+      // where: { ... },
       include: { user: true },
       orderBy: { loginAt: 'desc' }
     });
@@ -229,10 +231,13 @@ export async function paySession(req: Request, res: Response) {
   try {
     const sessionId = Number(req.params.id);
     const { amount, paymentMethod } = req.body;
-    const session = await prisma.session.update({
-      where: { id: sessionId },
-      data: { paid: true }
-    });
+    // Remova o update do campo paid
+    // await prisma.session.update({ where: { id: sessionId }, data: { paid: true } });
+    const session = await prisma.session.findUnique({ where: { id: sessionId } });
+    if (!session) {
+      res.status(404).json({ error: 'Session not found' });
+      return;
+    }
     await prisma.payment.create({
       data: {
         userId: session.userId,
@@ -277,7 +282,7 @@ export async function logoutUser(req: Request, res: Response): Promise<void> {
     const amountDue = hours * 15;
     await prisma.session.update({
       where: { id: sessionId },
-      data: { logoutAt: logoutAt, amountDue: amountDue, paid: false },
+      data: { logoutAt: logoutAt, amountDue: amountDue },
     });
     res.json({ message: 'Logout successful', hours, amountDue });
   } catch (error) {

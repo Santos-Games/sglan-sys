@@ -8,18 +8,18 @@ datasource db {
 }
 
 model Session {
-  id         Int      @id @default(autoincrement())
-  user       User     @relation(fields: [userId], references: [id])
-  userId     Int
-  loginAt    DateTime @default(now())
-  logoutAt   DateTime?
-  token      String? 
-  amountDue  Float    @default(0) 
-  paid       Boolean  @default(false) 
-  ip         String? 
-  deviceName String? 
-  macAddress String? 
-  payments   Payment[]
+  id            Int      @id @default(autoincrement())
+  user          User     @relation(fields: [userId], references: [id])
+  userId        Int
+  loginAt       DateTime @default(now())
+  logoutAt      DateTime?
+  token         String? 
+  amountDue     Float    @default(0) 
+  ip            String? 
+  deviceName    String? 
+  macAddress    String? 
+  payments      Payment[]
+  lastHeartbeat DateTime? // <-- novo campo
 }
 
 model User {
@@ -36,8 +36,8 @@ model User {
   sessions      Session[]
   payments      Payment[]
   auditLogs     AuditLog[]
-  hoursBalance  Float    @default(0) // saldo de horas
-  moneyBalance  Float    @default(0) // saldo em reais
+  hoursBalance  Float    @default(0)
+  moneyBalance  Float    @default(0)
 }
 
 model AuditLog {
