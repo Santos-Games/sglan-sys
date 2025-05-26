@@ -19,6 +19,7 @@ model Session {
   ip         String? 
   deviceName String? 
   macAddress String? 
+  payments   Payment[]
 }
 
 model User {
@@ -33,4 +34,29 @@ model User {
   jwtExpiration Int      @default(3600)
   updatedAt     DateTime @updatedAt
   sessions      Session[]
+  payments      Payment[]
+  auditLogs     AuditLog[]
+  hoursBalance  Float    @default(0) // saldo de horas
+  moneyBalance  Float    @default(0) // saldo em reais
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    Int?
+  action    String
+  details   String?
+  createdAt DateTime @default(now())
+  ip        String?
+}
+
+model Payment {
+  id            Int      @id @default(autoincrement())
+  user          User     @relation(fields: [userId], references: [id])
+  userId        Int
+  amount        Float
+  paymentMethod String
+  paidAt        DateTime @default(now())
+  session       Session? @relation(fields: [sessionId], references: [id])
+  sessionId     Int?
 }

@@ -1,36 +1,26 @@
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
+import { authenticate, authorizeAdmin } from '../middlewares/authMiddleware';
+import {
+  registerUser,
+  getUsers,
+  getUsageReport,
+  getPendingSessions,
+  paySession,
+  logoutAllSessions,
+  authorizeUser // adicione este import
+} from '../controllers/userController';
 
 const prisma = new PrismaClient();
 
 const router = express.Router();
 
-router.put('/user/:id/authorize', async (req, res) => {
-  const { id } = req.params;
-  const { canLogin, jwtExpiration } = req.body;
-
-  // Validação básica
-  if (isNaN(Number(id))) {
-    res.status(400).json({ error: 'Invalid user id' });
-    return;
-  }
-
-  // Log dos dados recebidos
-  console.log('Received:', { id, canLogin, jwtExpiration });
-
-  try {
-    const user = await prisma.user.update({
-      where: { id: Number(id) },
-      data: {
-        ...(canLogin !== undefined && { canLogin }),
-        ...(jwtExpiration !== undefined && { jwtExpiration }),
-      },
-    });
-    res.json({ message: 'User authorization updated successfully', user });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Failed to update user authorization', details: error });
-  }
-});
+router.put('/user/:id/authorize', authenticate, authorizeAdmin, authorizeUser);
+router.post('/register', authenticate, authorizeAdmin, registerUser);
+router.get('/users', authenticate, authorizeAdmin, getUsers);
+router.get('/report/usage', authenticate, authorizeAdmin, (req, res) => { getUsageReport(req, res); });
+router.get('/report/pending', authenticate, authorizeAdmin, (req, res) => { getPendingSessions(req, res); });
+router.post('/sessions/:id/pay', authenticate, authorizeAdmin, (req, res) => { paySession(req, res); });
+router.post('/logout-all', authenticate, authorizeAdmin, logoutAllSessions);
 
 export default router;
