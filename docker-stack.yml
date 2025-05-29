@@ -1,0 +1,45 @@
+version: "3.7"
+
+services:
+  sglan_sys_api:
+    image: node:22
+    networks:
+      - network_public
+    volumes:
+      - sglan_sys_app_data:/app
+    working_dir: /app
+    command:
+      - sh
+      - -c
+      - |
+        apt-get update && apt-get install -y git && \
+        if [ ! -d .git ]; then \
+          git clone --depth 1 https://github.com/Santos-Games/sglan-sys.git . && \
+          npm install; \
+        else \
+          echo "Repositório já clonado"; \
+        fi && \
+        npx prisma generate && \
+        npx prisma migrate deploy || true && \
+        npm run build || true && \
+        node dist/index.js
+    environment:
+      - NODE_ENV=production
+      - JWT_SECRET=${JWT_SECRET}
+      # Adicione outras variáveis de ambiente necessárias aqui
+    deploy:
+      mode: replicated
+      replicas: 1
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.sglan_sys_api.rule=Host(`sglan-sys.styxx.cloud`)
+        - traefik.http.routers.sglan_sys_api.entrypoints=websecure
+        - traefik.http.routers.sglan_sys_api.tls.certresolver=letsencryptresolver
+        - traefik.http.services.sglan_sys_api.loadbalancer.server.port=3000
+
+volumes:
+  sglan_sys_app_data:
+
+networks:
+  network_public:
+    external: true
