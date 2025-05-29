@@ -28,7 +28,16 @@
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
     "luxon": "^3.6.1",
-    "prisma": "^6.7.0"
+    "prisma": "^6.7.0",
+    "@types/bcrypt": "^5.0.2",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.18",
+    "@types/express": "^5.0.1",
+    "@types/jsonwebtoken": "^9.0.9",
+    "@types/luxon": "^3.6.2",
+    "@types/node": "^22.15.17",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",

@@ -15,17 +15,20 @@ services:
         apt-get update && apt-get install -y git && \
         if [ ! -d .git ]; then \
           git clone --depth 1 https://github.com/Santos-Games/sglan-sys.git . && \
-          npm install; \
+          npm install && \
+          npm install --save-dev @types/node @types/express @types/jsonwebtoken @types/bcrypt @types/luxon @types/cors; \
         else \
           echo "Repositório já clonado"; \
+          npm install --save-dev @types/node @types/express @types/jsonwebtoken @types/bcrypt @types/luxon @types/cors; \
         fi && \
         npx prisma generate && \
         npx prisma migrate deploy || true && \
         npm run build || true && \
-        node dist/index.js
+        npm run start
     environment:
       - NODE_ENV=production
       - JWT_SECRET=${JWT_SECRET}
+      - DATABASE_URL=${DATABASE_URL}
       # Adicione outras variáveis de ambiente necessárias aqui
     deploy:
       mode: replicated
