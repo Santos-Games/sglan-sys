@@ -18,7 +18,7 @@ export async function loginUser(req: Request, res: Response) {
         action: 'login_attempt',
         details: `Tentativa de login para ${email}`,
         ip: ip || req.ip,
-        createdAt: DateTime.now().setZone('America/Sao_Paulo').toJSDate()
+        createdAt: new Date()
       },
     });
 
@@ -29,7 +29,7 @@ export async function loginUser(req: Request, res: Response) {
           action: 'login_failed',
           details: `Falha de login para ${email}`,
           ip: ip || req.ip,
-          createdAt: DateTime.now().setZone('America/Sao_Paulo').toJSDate()
+          createdAt: new Date()
         },
       });
       res.status(401).json({ error: 'Invalid credentials' });
@@ -43,7 +43,7 @@ export async function loginUser(req: Request, res: Response) {
           action: 'login_blocked',
           details: 'Usuário não autorizado a logar',
           ip: ip || req.ip,
-          createdAt: DateTime.now().setZone('America/Sao_Paulo').toJSDate()
+          createdAt: new Date()
         },
       });
       res.status(403).json({ error: 'User is not authorized to log in' });
@@ -61,7 +61,7 @@ export async function loginUser(req: Request, res: Response) {
           action: 'login_denied_no_balance',
           details: `Usuário sem saldo de horas ou atingiu limite negativo (${user.hoursBalance}h/${user.negativeHoursLimit ?? 0}h)`,
           ip: ip || req.ip,
-          createdAt: DateTime.now().setZone('America/Sao_Paulo').toJSDate()
+          createdAt: new Date()
         },
       });
       res.status(403).json({ error: 'Insufficient balance or hours to login' });
@@ -79,7 +79,7 @@ export async function loginUser(req: Request, res: Response) {
           action: 'login_denied_active_session',
           details: 'Sessão já ativa',
           ip: ip || req.ip,
-          createdAt: DateTime.now().setZone('America/Sao_Paulo').toJSDate()
+          createdAt: new Date()
         },
       });
       res.status(403).json({ error: 'User already has an active session' });
@@ -88,18 +88,20 @@ export async function loginUser(req: Request, res: Response) {
 
     await prisma.user.update({
       where: { id: user.id },
-      data: { lastLogin: DateTime.now().setZone('America/Sao_Paulo').toJSDate() },
+      data: { lastLogin: new Date() },
     });
 
     const token = jwt.sign(
       { id: user.id, isAdmin: user.isAdmin },
-      process.env.JWT_SECRET || 'Susuki1249*',
+      process.env.JWT_SECRET || '',
       {
         expiresIn: user.jwtExpiration || '1h',
       }
     );
 
-    const loginAt = DateTime.now().setZone('America/Sao_Paulo').toJSDate();
+    const loginAt = new Date();
+
+    // console.log(loginAt)
 
     const session = await prisma.session.create({
       data: {
@@ -118,7 +120,7 @@ export async function loginUser(req: Request, res: Response) {
         action: 'login_success',
         details: `Login bem-sucedido para ${email}`,
         ip: ip || req.ip,
-        createdAt: DateTime.now().setZone('America/Sao_Paulo').toJSDate()
+        createdAt: new Date()
       },
     });
 
@@ -129,7 +131,7 @@ export async function loginUser(req: Request, res: Response) {
         action: 'login_error',
         details: `Erro no login: ${error}`,
         ip: req.body.ip || req.ip,
-        createdAt: DateTime.now().setZone('America/Sao_Paulo').toJSDate()
+        createdAt: new Date()
       },
     });
     res.status(500).json({ error: 'Failed to log in' });
@@ -253,7 +255,7 @@ export async function paySession(req: Request, res: Response) {
         amount,
         paymentMethod,
         sessionId: session.id,
-        paidAt: DateTime.now().setZone('America/Sao_Paulo').toJSDate()
+        paidAt: new Date()
       }
     });
     res.json({ message: 'Session marked as paid', session });
@@ -285,17 +287,19 @@ export async function logoutUser(req: Request, res: Response): Promise<void> {
       res.status(404).json({ error: 'Session not found or already logged out' });
       return;
     }
-    const logoutAt = DateTime.now().setZone('America/Sao_Paulo').toJSDate();
-    const loginAt = DateTime.fromJSDate(session.loginAt, { zone: 'utc' }).setZone('America/Sao_Paulo');
-    const diffMinutes = Math.ceil(DateTime.fromJSDate(logoutAt, { zone: 'utc' }).setZone('America/Sao_Paulo').diff(loginAt, 'minutes').minutes);
 
-    // Atualize a sessão com minutos usados
+    // Calcule minutos usados na sessão
+    const logoutAt = new Date();
+    const loginAt = new Date(session.loginAt);
+    const diffMinutes = Math.ceil((logoutAt.getTime() - loginAt.getTime()) / 60000);
+
+    // Atualize a sessão com minutos usados e logoutAt
     await prisma.session.update({
       where: { id: sessionId },
       data: { logoutAt: logoutAt, minutesUsed: diffMinutes }
     });
 
-    // Acumule minutos no usuário
+    // Atualize o saldo de minutos do usuário
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       res.status(404).json({ error: 'User not found' });
@@ -307,34 +311,38 @@ export async function logoutUser(req: Request, res: Response): Promise<void> {
     let moneyDiscounted = 0;
     let negativeUsed = 0;
 
-    // Cada 4 minutos = R$1, 60 minutos = R$15
-    const reaisToCharge = Math.floor(totalMinutes / 4);
+    // Cada 4 minutos = R$1
+    let reaisToCharge = Math.floor(totalMinutes / 4);
+    let saldoNegativoPermitido = Math.abs(negativeLimit * 15); // 1 hora = 15 reais
+
+    // Desconta do saldo em dinheiro e depois do limite negativo
     if (reaisToCharge > 0) {
       let toDiscount = reaisToCharge;
-      // Desconta do saldo
+
+      // Desconta do saldo positivo
       if (moneyBalance > 0) {
         const fromBalance = Math.min(moneyBalance, toDiscount);
         moneyDiscounted = fromBalance;
         moneyBalance -= fromBalance;
         toDiscount -= fromBalance;
       }
-      // Se não tem saldo suficiente, desconta do limite negativo (em horas)
-      if (toDiscount > 0 && negativeLimit < 0) {
-        // negativeLimit é negativo, então pode ir até esse valor
-        // Exemplo: negativeLimit = -2 (até -2 horas = -120 minutos = -30 reais)
-        // Cada real = 4 minutos negativos
-        const maxNegativeReais = Math.abs(negativeLimit * 15); // 1 hora = 15 reais
-        const currentNegativeReais = Math.floor(Math.abs(totalMinutes - (user.minutesBalance || 0)) / 4);
-        if (currentNegativeReais + toDiscount <= maxNegativeReais) {
-          negativeUsed = toDiscount;
-          toDiscount = 0;
-        } else {
-          negativeUsed = maxNegativeReais - currentNegativeReais;
-          toDiscount -= negativeUsed;
-        }
+
+      // Desconta do limite negativo (em reais)
+      if (toDiscount > 0 && saldoNegativoPermitido > 0) {
+        // Quanto já está negativo
+        const negativeBalanceUsed = moneyBalance < 0 ? Math.abs(moneyBalance) : 0;
+        const negativeAvailable = saldoNegativoPermitido - negativeBalanceUsed;
+        const fromNegative = Math.min(negativeAvailable, toDiscount);
+        negativeUsed = fromNegative;
+        moneyBalance -= fromNegative;
+        toDiscount -= fromNegative;
       }
-      // Atualize o saldo e minutos do usuário
-      totalMinutes -= reaisToCharge * 4;
+
+      // Se ainda restar toDiscount, não pode descontar além do limite negativo
+      // totalMinutes deve ser reduzido apenas pelo que foi realmente descontado
+      const reaisDescontados = reaisToCharge - toDiscount;
+      totalMinutes -= reaisDescontados * 4;
+
       await prisma.user.update({
         where: { id: userId },
         data: {
@@ -342,6 +350,18 @@ export async function logoutUser(req: Request, res: Response): Promise<void> {
           minutesBalance: totalMinutes
         }
       });
+
+      // Audit log para desconto automático
+      if (reaisDescontados > 0) {
+        await prisma.auditLog.create({
+          data: {
+            userId: userId,
+            action: 'auto_balance_discount',
+            details: `Descontado automaticamente R$${reaisDescontados} (${reaisDescontados * 4} minutos) do saldo do usuário. Saldo final: R$${moneyBalance}, minutos restantes: ${totalMinutes}`,
+            createdAt: new Date()
+          }
+        });
+      }
     } else {
       // Só atualize os minutos acumulados
       await prisma.user.update({
@@ -356,7 +376,9 @@ export async function logoutUser(req: Request, res: Response): Promise<void> {
       message: 'Logout successful',
       minutesUsed: diffMinutes,
       moneyDiscounted,
-      minutesBalance: totalMinutes
+      negativeUsed,
+      minutesBalance: totalMinutes,
+      moneyBalance
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to logout' });
@@ -365,7 +387,7 @@ export async function logoutUser(req: Request, res: Response): Promise<void> {
 
 export async function logoutAllSessions(req: Request, res: Response): Promise<void> {
   try {
-    const now = DateTime.now().setZone('America/Sao_Paulo').toJSDate();
+    const now = new Date();
     const { count } = await prisma.session.updateMany({
       where: {
         logoutAt: null,

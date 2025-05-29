@@ -28,7 +28,7 @@ router.post('/heartbeat', authenticate, async (req: Request, res: Response): Pro
   }
   await prisma.session.update({
     where: { id: sessionId },
-    data: { lastHeartbeat: DateTime.now().setZone('America/Sao_Paulo').toJSDate() }
+    data: { lastHeartbeat: new Date() }
   });
   res.json({ ok: true });
 });
